@@ -257,63 +257,62 @@ int main()
             // Just print it out here.
             printf("\r\nMessage arrived:\r\n%s\r\n\r\n", messageBuffer);
         }
-        /* Publish data */
-        {
-            isPublish = false;
-            message.retained = false;
-            message.dup = false;
 
-            char *buf = new char[buf_size];
+	/* Publish data */
+	{
+		isPublish = false;
+		message.retained = false;
+		message.dup = false;
 
-			if(id != PUBLISH_LAUNCH || id < PUBLISH_TEMP){
-				len = sprintf(buf,"{\"HearBeat\":\"%s\",\"PacketId\":\"%d\"}",time_buff,message.id);
-				if(len < 0) {
-					printf("ERROR: sprintf() returns %d \r\n", len);
-					continue;
-				}
+		char *buf = new char[buf_size];
+
+		if(id != PUBLISH_LAUNCH || id < PUBLISH_TEMP){
+			len = sprintf(buf,"{\"HearBeat\":\"%s\",\"PacketId\":\"%d\"}",time_buff,message.id);
+			if(len < 0) {
+				printf("ERROR: sprintf() returns %d \r\n", len);
+				continue;
 			}
-			else{
-	            len=sprintf(buf,
-						"{\"Temp\":\"%.1f\",\"Time\":\"%s\",\"IMEI\":\"%s\"}",
-						tempC,time_buff,imei
-						);
-
-				if(len < 0) {
-					printf("ERROR: sprintf() returns %d \r\n", len);
-					continue;
-				}
+		}else{
+			len=sprintf(buf,
+					"{\"Temp\":\"%.1f\",\"Time\":\"%s\",\"IMEI\":\"%s\"}",
+					tempC,time_buff,imei
+					);
+			if(len < 0) {
+				printf("ERROR: sprintf() returns %d \r\n", len);
+				continue;
 			}
-            message.payload = (void*)buf;
-            message.qos = MQTT::QOS0;
-            printf("Packet ID %d \r\n",id);
-            message.id = id;
-            message.payloadlen = len;
+		}
+		message.payload = (void*)buf;
+		message.qos = MQTT::QOS0;
+		printf("Packet ID %d \r\n",id);
+		message.id = id;
+		message.payloadlen = len;
 
-			// Publish a message.
-            if(id == PUBLISH_LAUNCH){
-            	rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
-				id++;
-            }else if(id > PUBLISH_TEMP){
-            	rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
-            	id = 1;
-            }else{
-            	rc_publish = mqttClient->publish(MQTT_TOPIC_HR, message);
-            	id++;
-            }
+		// Publish a message.
+		if(id == PUBLISH_LAUNCH){
+			rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
+			id++;
+		}else if(id > PUBLISH_TEMP){
+			rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
+			id = 1;
+		}else{
+			rc_publish = mqttClient->publish(MQTT_TOPIC_HR, message);
+			id++;
+		}
 
-        	led = LED_ON;
-        	wait(1);
-        	led = LED_OFF;
+		led = LED_ON;
+		wait(1);
+		led = LED_OFF;
 
-            if(rc_publish != MQTT::SUCCESS) {
-                printf("ERROR: rc from MQTT publish is %d\r\n", rc_publish);
-                printf("Disconnecting Client.\r\n");
-				client_reset(mqttClient,isSubscribed,mqttNetwork,interface);
-            }
-            delete[] buf;    
+		if(rc_publish != MQTT::SUCCESS) {
+			printf("ERROR: rc from MQTT publish is %d\r\n", rc_publish);
+			printf("Disconnecting Client.\r\n");
+			client_reset(mqttClient,isSubscribed,mqttNetwork,interface);
+		}
+		delete[] buf;
 
-            wait(80);
-        }
+		wait(80);
+    }
     }
 
     printf("The client has disconnected.\r\n");
