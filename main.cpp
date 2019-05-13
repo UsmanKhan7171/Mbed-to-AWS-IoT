@@ -36,6 +36,7 @@
 #include "mbed_events.h"
 #include "mbedtls/error.h"
 #include "humidity-temperature-sensor-si7034-a10/Si7034.h"
+#include "battery-gauge-bq27441/battery_gauge_bq27441.h"
 
 #define MQTTCLIENT_QOS1 0
 #define MQTTCLIENT_QOS2 0
@@ -48,9 +49,11 @@
 #define PASSWORD    NULL
 #define LED_ON  MBED_CONF_APP_LED_ON
 #define LED_OFF MBED_CONF_APP_LED_OFF
-#define PUBLISH_TEMP   112
+#define PUBLISH_TEMP   50
+#define WAIT_INTERVAL  70
 #define PUBLISH_LAUNCH 0
 #define DEFAULT_RTC_TIME 536898160
+#define TIME_ZONE_OFFSET 18000 // 18000 for Lahore, it has to be 0 for UK
 
 static volatile bool isPublish = false;
 /* Flag to be set when received a message from the server. */
@@ -98,6 +101,27 @@ void client_reset(MQTT::Client<MQTTNetwork, Countdown>* mqttClient,bool isSubscr
 	NVIC_SystemReset();
 }
 
+void publish_packet(MQTT::Message &message, char * buf , unsigned short & id , int &rc_publish , MQTT::Client<MQTTNetwork, Countdown>* mqttClient, int &len)
+{
+	printf("Packet ID %d \r\n",id);
+	message.payload = (void*)buf;
+	message.qos = MQTT::QOS0;
+	message.id = id;
+	message.payloadlen = len;
+
+	// Publish a message.
+	if(id == PUBLISH_LAUNCH){
+		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
+		id++;
+	}else if(id > PUBLISH_TEMP){
+		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
+		id = 1;
+	}else{
+		rc_publish = mqttClient->publish(MQTT_TOPIC_HR, message);
+		id++;
+	}
+}
+
 int main()
 {
 	printf("Starting Application\r\n");
@@ -107,10 +131,14 @@ int main()
     MQTTNetwork* mqttNetwork = NULL;
     MQTT::Client<MQTTNetwork, Countdown>* mqttClient = NULL;
     DigitalOut led(MBED_CONF_APP_LED_PIN, LED_ON);
+    I2C i2C(I2C_SDA_B, I2C_SCL_B);
+	BatteryGaugeBq27441 gauge;
+	int32_t battery_pctg = 0;
 
     bool isSubscribed = false;
 	int rc_publish;
 	float tempC;
+	float tempH;
 	unsigned short id = 0;
 	int len=0;
     char * time_buff, *src, *dst;
@@ -153,7 +181,7 @@ int main()
 
     if(now > 0 && now != DEFAULT_RTC_TIME){
     	set_time(now);
-		printf("Current Time: %s", ctime(&now));
+		printf("Current Time: %s\r\n", ctime(&now));
     }else{
     	client_reset(mqttClient,isSubscribed,mqttNetwork,interface);
     }
@@ -222,12 +250,9 @@ int main()
     const size_t buf_size = 200;
 
     while(1) {
-    	si1.getTemperature(&tempC);
-    	printf("Temp in Celcius %f \r\n", tempC);
-
-        time_t seconds = time(NULL);
+        time_t seconds = time(NULL) + TIME_ZONE_OFFSET;
         time_buff = ctime(&seconds);
-        printf("Current Time:  %s", time_buff);
+        printf("Current Time:  %s\r\n", time_buff);
         wait(1);
 		src = time_buff;
 		for (src = dst = time_buff; *src != '\0'; src++) {
@@ -241,6 +266,10 @@ int main()
 		}
 		*dst = '\0';
 
+		if (gauge.init(&i2C)){
+			if (gauge.getRemainingPercentage(&battery_pctg))
+				printf("Remaining battery percentage: %d%%.\r\n", (int) battery_pctg);
+		}
     	/* Check connection */
         if(!mqttClient->isConnected()){
             printf("Disconnecting Client.\r\n");
@@ -258,48 +287,46 @@ int main()
             printf("\r\nMessage arrived:\r\n%s\r\n\r\n", messageBuffer);
         }
 
-	/* Publish data */
-	{
+	  /* Publish data */
+	  {
 		isPublish = false;
 		message.retained = false;
 		message.dup = false;
 
 		char *buf = new char[buf_size];
 
-		if(id != PUBLISH_LAUNCH || id < PUBLISH_TEMP){
-			len = sprintf(buf,"{\"HearBeat\":\"%s\",\"PacketId\":\"%d\"}",time_buff,message.id);
+		if(id != PUBLISH_LAUNCH && id < PUBLISH_TEMP){
+			len = sprintf(buf,"{\"HeartBeat\":\"%s\",\"PacketId\":\"%d\",\"Battery %\":\"%d\"}",time_buff,message.id,battery_pctg);
 			if(len < 0) {
 				printf("ERROR: sprintf() returns %d \r\n", len);
 				continue;
 			}
+			publish_packet(message, buf , id , rc_publish , mqttClient , len); // Publish HeartBeat
 		}else{
+			si1.getTemperature(&tempC);
+			printf("Temp in Celcius %f \r\n", tempC);
 			len=sprintf(buf,
-					"{\"Temp\":\"%.1f\",\"Time\":\"%s\",\"IMEI\":\"%s\"}",
+					"{\"Temp\":\"%.1f\",\"D/T\":\"%s\",\"IMEI\":\"%s\"}",
 					tempC,time_buff,imei
 					);
 			if(len < 0) {
 				printf("ERROR: sprintf() returns %d \r\n", len);
 				continue;
 			}
-		}
-		message.payload = (void*)buf;
-		message.qos = MQTT::QOS0;
-		printf("Packet ID %d \r\n",id);
-		message.id = id;
-		message.payloadlen = len;
+			publish_packet(message, buf , id , rc_publish , mqttClient , len); // Publish Temperature
 
-		// Publish a message.
-		if(id == PUBLISH_LAUNCH){
-			rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
-			id++;
-		}else if(id > PUBLISH_TEMP){
-			rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
-			id = 1;
-		}else{
-			rc_publish = mqttClient->publish(MQTT_TOPIC_HR, message);
-			id++;
+			si1.getHumidity(&tempH);
+			printf(" Humidity in RH is %f \r\n", tempH);
+			len=sprintf(buf,
+					"{\"Humd\":\"%.1f\",\"D/T\":\"%s\",\"IMEI\":\"%s\"}",
+					tempH,time_buff,imei
+					);
+			if(len < 0) {
+				printf("ERROR: sprintf() returns %d \r\n", len);
+				continue;
+			}
+			publish_packet(message, buf , id , rc_publish , mqttClient , len); // Publish Humidity
 		}
-
 		led = LED_ON;
 		wait(1);
 		led = LED_OFF;
@@ -311,8 +338,8 @@ int main()
 		}
 		delete[] buf;
 
-		wait(80);
-    }
+		wait(WAIT_INTERVAL);
+      }
     }
 
     printf("The client has disconnected.\r\n");
