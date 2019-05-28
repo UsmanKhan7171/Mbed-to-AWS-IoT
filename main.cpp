@@ -54,7 +54,7 @@
 #define WAIT_INTERVAL  70
 #define PUBLISH_LAUNCH 0
 #define DEFAULT_RTC_TIME 536898160
-#define TIME_ZONE_OFFSET 18000 // 18000 for Lahore, it has to be 0 for UK
+#define TIME_ZONE_OFFSET 0 // 18000 for Lahore, it has to be 0 for UK
 
 static volatile bool isPublish = false;
 /* Flag to be set when received a message from the server. */
