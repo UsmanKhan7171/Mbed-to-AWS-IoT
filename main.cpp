@@ -49,11 +49,12 @@
 #define PASSWORD    NULL
 #define LED_ON  MBED_CONF_APP_LED_ON
 #define LED_OFF MBED_CONF_APP_LED_OFF
-#define PUBLISH_TEMP   50
+#define PUBLISH_TEMP  51
+#define PUBLISH_HUM   PUBLISH_TEMP+1
 #define WAIT_INTERVAL  70
 #define PUBLISH_LAUNCH 0
 #define DEFAULT_RTC_TIME 536898160
-#define TIME_ZONE_OFFSET 0 // 18000 for Lahore, it has to be 0 for UK
+#define TIME_ZONE_OFFSET 18000 // 18000 for Lahore, it has to be 0 for UK
 
 static volatile bool isPublish = false;
 /* Flag to be set when received a message from the server. */
@@ -113,7 +114,10 @@ void publish_packet(MQTT::Message &message, char * buf , unsigned short & id , i
 	if(id == PUBLISH_LAUNCH){
 		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
 		id++;
-	}else if(id > PUBLISH_TEMP){
+	}else if(id == PUBLISH_TEMP){
+		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
+		id++;
+	}else if(id == PUBLISH_HUM){
 		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
 		id = 1;
 	}else{
