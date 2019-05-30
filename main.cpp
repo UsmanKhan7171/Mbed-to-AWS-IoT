@@ -49,10 +49,11 @@
 #define PASSWORD    NULL
 #define LED_ON  MBED_CONF_APP_LED_ON
 #define LED_OFF MBED_CONF_APP_LED_OFF
-#define PUBLISH_TEMP  51
+#define PUBLISH_TEMP  50
 #define PUBLISH_HUM   PUBLISH_TEMP+1
 #define WAIT_INTERVAL  70
 #define PUBLISH_LAUNCH 0
+#define PUBLISH_LAUNCH_H PUBLISH_LAUNCH + 1
 #define DEFAULT_RTC_TIME 536898160
 #define TIME_ZONE_OFFSET 0 // 18000 for Lahore, it has to be 0 for UK
 
@@ -114,6 +115,9 @@ void publish_packet(MQTT::Message &message, char * buf , unsigned short & id , i
 	if(id == PUBLISH_LAUNCH){
 		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
 		id++;
+	}else if(id == PUBLISH_LAUNCH_H){
+		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
+		id++;
 	}else if(id == PUBLISH_TEMP){
 		rc_publish = mqttClient->publish(MQTT_TOPIC_SUB, message);
 		id++;
@@ -173,6 +177,8 @@ int main()
 	for (x = 0; interface->connect(PIN) != 0; x++) {
 		if (x > 0) {
 			printf("Retrying (have you checked that an antenna is plugged in and your APN is correct?)...\n");
+			if(x>35)
+				NVIC_SystemReset();
 		}
 	}
     printf("Network interface opened successfully.\r\n");
@@ -299,7 +305,7 @@ int main()
 
 		char *buf = new char[buf_size];
 
-		if(id != PUBLISH_LAUNCH && id < PUBLISH_TEMP){
+		if(id != PUBLISH_LAUNCH && id != PUBLISH_HUM && id != PUBLISH_TEMP){
 			len = sprintf(buf,"{\"HeartBeat\":\"%s\",\"PacketId\":\"%d\",\"Battery %\":\"%d\"}",time_buff,message.id,battery_pctg);
 			if(len < 0) {
 				printf("ERROR: sprintf() returns %d \r\n", len);
@@ -310,8 +316,8 @@ int main()
 			si1.getTemperature(&tempC);
 			printf("Temp in Celcius %f \r\n", tempC);
 			len=sprintf(buf,
-					"{\"Temp\":\"%.1f\",\"D/T\":\"%s\",\"IMEI\":\"%s\"}",
-					tempC,time_buff,imei
+					"{\"IMEI\":\"%s\",\"Time\":\"%s\",\"Temp\":\"%.1f\"}",
+					imei,time_buff,tempC
 					);
 			if(len < 0) {
 				printf("ERROR: sprintf() returns %d \r\n", len);
@@ -319,11 +325,29 @@ int main()
 			}
 			publish_packet(message, buf , id , rc_publish , mqttClient , len); // Publish Temperature
 
+			wait(WAIT_INTERVAL);
+
+			seconds = time(NULL) + TIME_ZONE_OFFSET;
+	        time_buff = ctime(&seconds);
+	        printf("Current Time:  %s\r\n", time_buff);
+	        wait(1);
+			src = time_buff;
+			for (src = dst = time_buff; *src != '\0'; src++) {
+			    *dst = *src;
+			    if(*dst != ' '){
+				   if (*dst != '\n') dst++;
+			    } else if(*dst == ' '){
+				   *dst = '-';
+				   dst++;
+			    }
+			}
+			*dst = '\0';
+
 			si1.getHumidity(&tempH);
-			printf(" Humidity in RH is %f \r\n", tempH);
+			printf(" Humd in RH is %f \r\n", tempH);
 			len=sprintf(buf,
-					"{\"Humd\":\"%.1f\",\"D/T\":\"%s\",\"IMEI\":\"%s\"}",
-					tempH,time_buff,imei
+					"{\"IMEI\":\"%s\",\"Time\":\"%s\",\"Humd\":\"%.1f\"}",
+					imei,time_buff,tempH
 					);
 			if(len < 0) {
 				printf("ERROR: sprintf() returns %d \r\n", len);
