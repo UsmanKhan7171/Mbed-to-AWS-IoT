@@ -150,6 +150,7 @@ int main()
 	unsigned short id = 0;
 	int len=0;
     char * time_buff, *src, *dst;
+	time_t seconds;
 
 	MQTT::Message message;
 	DigitalOut gpio_enable_si(PD_14);
@@ -260,7 +261,7 @@ int main()
     const size_t buf_size = 200;
 
     while(1) {
-        time_t seconds = time(NULL) + TIME_ZONE_OFFSET;
+        seconds = time(NULL) + TIME_ZONE_OFFSET;
         time_buff = ctime(&seconds);
         printf("Current Time:  %s\r\n", time_buff);
         wait(1);
